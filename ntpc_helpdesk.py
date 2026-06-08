@@ -4,12 +4,11 @@ NTPC IT Helpdesk Chatbot + Maintenance Alert System
 Internship Project | NTPC IT Division
 Built with: Python, Streamlit, Google Gemini API, Pandas
 
-Features:
-  1. AI-powered chatbot for IT troubleshooting (Gemini 1.5 Flash - FREE)
-  2. Step-by-step guided diagnosis (error → device → solution)
-  3. Device-specific solutions using real NTPC asset data
-  4. Maintenance dashboard with urgency scoring
-  5. Critical maintenance popup alerts
+New Features Added:
+  - Warranty expiry popup alerts (expired + expiring soon)
+  - Vendor details shown after every AI solution
+  - Vendor details in maintenance dashboard cards
+  - Warranty status column in asset table
 """
 
 import os
@@ -19,7 +18,7 @@ from datetime import datetime, date
 import google.generativeai as genai
 
 # ─────────────────────────────────────────────
-# PAGE CONFIG  (must be first Streamlit call)
+# PAGE CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
     page_title="NTPC IT Helpdesk",
@@ -29,29 +28,23 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# CUSTOM CSS  – clean industrial/utility theme
+# CUSTOM CSS
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
 
-/* ---- Base ---- */
 html, body, [class*="css"] {
     font-family: 'IBM Plex Sans', sans-serif;
     background-color: #0d1117;
     color: #e6edf3;
 }
-
-/* ---- Sidebar ---- */
 section[data-testid="stSidebar"] {
     background: #161b22;
     border-right: 1px solid #30363d;
 }
-
-/* ---- Headers ---- */
 h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
 
-/* ---- Chat bubbles ---- */
 .user-bubble {
     background: #1f6feb22;
     border: 1px solid #1f6feb55;
@@ -70,9 +63,59 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
     font-size: 0.95rem;
     color: #e6edf3;
 }
-.bot-bubble strong { color: #f0c040; }
 
-/* ---- Alert cards ---- */
+/* Vendor card */
+.vendor-card {
+    background: #0d2235;
+    border: 1px solid #1f6feb;
+    border-left: 4px solid #1f6feb;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 10px 0;
+}
+.vendor-card .vendor-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: #79c0ff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+}
+.vendor-card .vendor-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #e6edf3;
+}
+.vendor-card .vendor-contact {
+    font-size: 0.85rem;
+    color: #8b949e;
+    margin-top: 4px;
+}
+
+/* Warranty cards */
+.warranty-expired {
+    background: #3d1010;
+    border-left: 4px solid #f85149;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 6px 0;
+}
+.warranty-expiring {
+    background: #2d1f00;
+    border-left: 4px solid #e3a414;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 6px 0;
+}
+.warranty-ok {
+    background: #0d2b1e;
+    border-left: 4px solid #3fb950;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 4px 0;
+}
+
+/* Alert cards */
 .alert-critical {
     background: #3d1010;
     border-left: 4px solid #f85149;
@@ -102,7 +145,6 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
     margin: 4px 0;
 }
 
-/* ---- Metric boxes ---- */
 .metric-box {
     background: #161b22;
     border: 1px solid #30363d;
@@ -113,7 +155,6 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
 .metric-num { font-size: 2rem; font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
 .metric-label { font-size: 0.8rem; color: #8b949e; margin-top: 4px; }
 
-/* ---- Input ---- */
 .stTextInput > div > div > input {
     background: #161b22 !important;
     border: 1px solid #30363d !important;
@@ -125,8 +166,6 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
     border: 1px solid #30363d !important;
     color: #e6edf3 !important;
 }
-
-/* ---- Buttons ---- */
 .stButton > button {
     background: #238636 !important;
     color: white !important;
@@ -135,11 +174,9 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
     font-family: 'IBM Plex Mono', monospace !important;
     font-weight: 600 !important;
     padding: 8px 20px !important;
-    transition: background 0.2s !important;
 }
 .stButton > button:hover { background: #2ea043 !important; }
 
-/* ---- Popup overlay ---- */
 .popup-overlay {
     background: #1a0000;
     border: 2px solid #f85149;
@@ -152,8 +189,13 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
     0%,100% { border-color: #f85149; }
     50%      { border-color: #ff7b7b; }
 }
-
-/* ---- NTPC badge ---- */
+.warranty-popup {
+    background: #1a1000;
+    border: 2px solid #e3a414;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
 .ntpc-badge {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.7rem;
@@ -171,17 +213,34 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; }
 # ─────────────────────────────────────────────
 # GEMINI API SETUP
 # ─────────────────────────────────────────────
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", "")
 if not GEMINI_API_KEY:
-    st.error(
-        "❌ **GEMINI_API_KEY not set!**\n\n"
-        "Please stop the app and run in PowerShell:\n\n"
-        "`$env:GEMINI_API_KEY=\"your-key-here\"`\n\n"
-        "Get a free key at: https://aistudio.google.com/app/apikey"
-    )
+    st.error("""
+❌ **GEMINI_API_KEY not set!**
+
+Please stop the app and run in PowerShell:
+`$env:GEMINI_API_KEY="your-key-here"`
+
+Get a free key at: https://aistudio.google.com/app/apikey
+""")
     st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
+
+
+# ─────────────────────────────────────────────
+# HELPER: PARSE VENDOR DETAILS
+# ─────────────────────────────────────────────
+def parse_vendor(vendor_str):
+    """Split vendor details into name and contact."""
+    if not vendor_str or str(vendor_str).strip() in ["", "nan"]:
+        return "Not Available", ""
+    v = str(vendor_str).strip()
+    # Try to split on first comma
+    parts = v.split(",", 1)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return v, ""
 
 
 # ─────────────────────────────────────────────
@@ -189,25 +248,18 @@ genai.configure(api_key=GEMINI_API_KEY)
 # ─────────────────────────────────────────────
 @st.cache_data
 def load_data():
-    """
-    Load the NTPC IT asset CSV file and compute:
-      - next_maintenance  : date when maintenance is due
-      - days_remaining    : days until (or since) maintenance
-      - urgency_score     : composite score for prioritisation
-      - status            : OVERDUE / DUE SOON / UPCOMING / OK
-    """
     file_path = "NTPC_IT-PROJECT.csv"
     if not os.path.exists(file_path):
         st.error(
             "❌ Data file **'NTPC_IT-PROJECT.csv'** not found.\n\n"
-            "Please place the CSV file in the **same folder** as `ntpc_helpdesk.py` and restart the app."
+            "Please place the CSV file in the **same folder** as `ntpc_helpdesk.py` and restart."
         )
         st.stop()
 
     df = pd.read_csv(file_path)
-
-    # ── Clean column names ──────────────────────────────────────
     df.columns = df.columns.str.strip()
+
+    # Rename columns
     df.rename(columns={
         "Maintanence Period":      "maintenance_period",
         "Maintanence Date(Last)":  "last_maintenance",
@@ -217,32 +269,47 @@ def load_data():
         "Asset_Make":              "asset_make",
         "Model_Details":           "model",
         "Purchase Date":           "purchase_date",
+        "WARR END DT":             "warranty_end",
+        "Vendor Details":          "vendor_details",
     }, inplace=True)
 
-    # ── Parse periods to days ───────────────────────────────────
+    # Parse maintenance period to days
     def period_to_days(p):
         p = str(p).strip().lower()
         if "3 month"  in p: return 90
         if "6 month"  in p: return 180
         if "12 month" in p: return 365
-        return 180  # default fallback
+        return 180
 
     df["period_days"] = df["maintenance_period"].apply(period_to_days)
 
-    # ── Convert date columns ────────────────────────────────────
-    df["last_maintenance"] = pd.to_datetime(df["last_maintenance"], errors="coerce")
-
+    # Parse dates
     today = pd.Timestamp(date.today())
+    df["last_maintenance"] = pd.to_datetime(df["last_maintenance"], dayfirst=True, errors="coerce")
+    df["purchase_date"]    = pd.to_datetime(df["purchase_date"],    dayfirst=True, errors="coerce")
+    df["warranty_end"]     = pd.to_datetime(df["warranty_end"],     dayfirst=True, errors="coerce")
 
-    # ── Derived columns ─────────────────────────────────────────
+    # Maintenance derived columns
     df["next_maintenance"] = df["last_maintenance"] + pd.to_timedelta(df["period_days"], unit="D")
     df["days_remaining"]   = (df["next_maintenance"] - today).dt.days
 
-    # ── Criticality weight (for urgency score) ──────────────────
+    # Warranty derived columns
+    df["warranty_days_left"] = (df["warranty_end"] - today).dt.days
+
+    def warranty_status(d):
+        if pd.isna(d):    return "⚪ NO DATA"
+        if d < 0:         return "🔴 EXPIRED"
+        if d <= 90:       return "🟠 EXPIRING SOON"
+        if d <= 365:      return "🟡 VALID (<1yr)"
+        return            "🟢 VALID"
+
+    df["warranty_status"] = df["warranty_days_left"].apply(warranty_status)
+
+    # Criticality weight
     crit_map = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1}
     df["crit_weight"] = df["criticality"].map(crit_map).fillna(2)
 
-    # ── Urgency score: higher = needs attention sooner ──────────
+    # Urgency score
     def urgency(row):
         d = row["days_remaining"]
         if pd.isna(d): return 0
@@ -251,8 +318,8 @@ def load_data():
 
     df["urgency_score"] = df.apply(urgency, axis=1)
 
-    # ── Status label ────────────────────────────────────────────
-    def status(d):
+    # Maintenance status
+    def maint_status(d):
         if pd.isna(d):  return "UNKNOWN"
         if d < 0:       return "🔴 OVERDUE"
         if d <= 7:      return "🔴 DUE THIS WEEK"
@@ -260,17 +327,18 @@ def load_data():
         if d <= 60:     return "🟡 UPCOMING"
         return          "🟢 OK"
 
-    df["status"] = df["days_remaining"].apply(status)
+    df["status"] = df["days_remaining"].apply(maint_status)
+
+    # Fill NaN vendor details
+    df["vendor_details"] = df["vendor_details"].fillna("")
 
     return df.sort_values("urgency_score", ascending=False)
 
 
-# Load dataset
 df = load_data()
 
-
 # ─────────────────────────────────────────────
-# COMMON IT ERRORS  (used in chatbot quick-pick)
+# COMMON IT ERRORS
 # ─────────────────────────────────────────────
 COMMON_ERRORS = [
     "System not turning on / no power",
@@ -293,30 +361,71 @@ COMMON_ERRORS = [
 
 
 # ─────────────────────────────────────────────
-# AI SOLUTION GENERATOR  (calls Gemini API)
+# VENDOR CARD RENDERER
+# ─────────────────────────────────────────────
+def show_vendor_card(asset_row, context="solution"):
+    """Render a vendor info card for the given asset row."""
+    vendor_raw = asset_row.get("vendor_details", "")
+    vendor_name, vendor_contact = parse_vendor(vendor_raw)
+    asset_id   = asset_row.get("asset_id", "N/A")
+    device     = asset_row.get("device_type", "N/A")
+    warr_status= asset_row.get("warranty_status", "⚪ NO DATA")
+    warr_days  = asset_row.get("warranty_days_left", None)
+
+    warr_str = ""
+    if pd.notna(warr_days):
+        if warr_days < 0:
+            warr_str = f"<span style='color:#f85149'>Expired {abs(int(warr_days))} days ago</span>"
+        else:
+            warr_str = f"<span style='color:#3fb950'>Valid for {int(warr_days)} more days</span>"
+    else:
+        warr_str = "<span style='color:#8b949e'>No warranty data</span>"
+
+    st.markdown(f"""
+<div class="vendor-card">
+  <div class="vendor-title">📞 Vendor & Warranty Details — {asset_id} ({device})</div>
+  <div class="vendor-name">🏢 {vendor_name}</div>
+  <div class="vendor-contact">📱 {vendor_contact if vendor_contact else 'Contact not available'}</div>
+  <div class="vendor-contact" style="margin-top:6px">🛡️ Warranty: {warr_status} &nbsp;|&nbsp; {warr_str}</div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# AI SOLUTION GENERATOR
 # ─────────────────────────────────────────────
 def get_ai_solution(error_desc: str, device_info: dict) -> str:
-    """
-    Sends error + device context to Google Gemini API (FREE).
-    Returns a structured troubleshooting response.
-    """
-
-    # Build a rich context string from device data
+    device_context = ""
     if device_info:
+        warr_days = device_info.get("warranty_days_left", None)
+        warr_note = ""
+        if pd.notna(warr_days) if not isinstance(warr_days, str) else False:
+            if warr_days < 0:
+                warr_note = f"WARRANTY EXPIRED {abs(int(warr_days))} days ago — escalate to vendor!"
+            elif warr_days <= 90:
+                warr_note = f"WARRANTY EXPIRING in {int(warr_days)} days — contact vendor soon."
+            else:
+                warr_note = f"Warranty valid for {int(warr_days)} more days."
+
+        vendor_raw = device_info.get("vendor_details", "")
+        vendor_name, vendor_contact = parse_vendor(vendor_raw)
+
         device_context = f"""
 Device Information from NTPC Asset Register:
-- Asset ID      : {device_info.get('asset_id', 'N/A')}
-- Device Type   : {device_info.get('device_type', 'N/A')}
-- Make/Brand    : {device_info.get('asset_make', 'N/A')}
-- Model         : {device_info.get('model', 'N/A')}
-- Purchase Date : {device_info.get('purchase_date', 'N/A')}
-- Criticality   : {device_info.get('criticality', 'N/A')}
-- Last Maintenance : {device_info.get('last_maintenance', 'N/A')}
-- Next Due Date    : {device_info.get('next_maintenance', 'N/A')}
-- Days Until Due   : {device_info.get('days_remaining', 'N/A')} days
+- Asset ID        : {device_info.get('asset_id', 'N/A')}
+- Device Type     : {device_info.get('device_type', 'N/A')}
+- Make/Brand      : {device_info.get('asset_make', 'N/A')}
+- Model           : {device_info.get('model', 'N/A')}
+- Purchase Date   : {device_info.get('purchase_date', 'N/A')}
+- Criticality     : {device_info.get('criticality', 'N/A')}
+- Last Maintenance: {device_info.get('last_maintenance', 'N/A')}
+- Next Due Date   : {device_info.get('next_maintenance', 'N/A')}
+- Days Until Due  : {device_info.get('days_remaining', 'N/A')} days
+- Warranty Status : {device_info.get('warranty_status', 'N/A')} — {warr_note}
+- Vendor          : {vendor_name} | {vendor_contact}
 """
     else:
-        device_context = "Device not found in NTPC asset register. Giving general advice."
+        device_context = "Device not found in NTPC asset register. Providing general advice."
 
     prompt = f"""You are an expert IT helpdesk assistant for NTPC (National Thermal Power Corporation),
 a major Indian government power company. You are helping an IT staff member diagnose and fix a problem.
@@ -345,15 +454,14 @@ State clearly: YES or NO. If YES, explain what cleaning steps are recommended.
 3-4 bullet points to prevent this issue in future.
 
 ## 📞 Escalation
-When should this be escalated to senior IT or vendor support?
+When should this be escalated to vendor support? Note any warranty considerations.
 
-Keep the tone professional but simple. Use plain English. No jargon unless necessary."""
+Keep the tone professional but simple. Use plain English."""
 
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model    = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(prompt)
         return response.text
-
     except Exception as e:
         return f"""## ⚠️ AI Service Unavailable
 
@@ -372,15 +480,10 @@ The AI assistant is temporarily offline. Here are general steps:
 # ─────────────────────────────────────────────
 # MAINTENANCE ALERTS POPUP
 # ─────────────────────────────────────────────
-def show_critical_alerts():
-    """
-    Shows a prominent popup/banner for overdue and this-week-due devices.
-    """
+def show_maintenance_alerts():
     urgent = df[df["days_remaining"] <= 7].copy()
-
     if urgent.empty:
         return
-
     overdue   = urgent[urgent["days_remaining"] < 0]
     this_week = urgent[urgent["days_remaining"] >= 0]
 
@@ -390,29 +493,75 @@ def show_critical_alerts():
     if not overdue.empty:
         st.markdown(f"**{len(overdue)} device(s) are OVERDUE for maintenance!**")
         for _, row in overdue.iterrows():
+            vendor_name, vendor_contact = parse_vendor(row["vendor_details"])
             st.markdown(f"""
 <div class="alert-critical">
 <strong>🔴 OVERDUE: {row['asset_id']}</strong> — {row['device_type']} ({row['asset_make']} {row['model']})<br>
 <small>Overdue by <strong>{abs(int(row['days_remaining']))} days</strong> |
 Criticality: <strong>{row['criticality']}</strong> |
-Last maintained: {row['last_maintenance'].strftime('%d %b %Y') if pd.notna(row['last_maintenance']) else 'Unknown'}</small>
+Last maintained: {row['last_maintenance'].strftime('%d %b %Y') if pd.notna(row['last_maintenance']) else 'Unknown'}</small><br>
+<small>📞 Vendor: <strong>{vendor_name}</strong> {(' | ' + vendor_contact) if vendor_contact else ''}</small>
 </div>""", unsafe_allow_html=True)
 
     if not this_week.empty:
         st.markdown(f"**{len(this_week)} device(s) due within 7 days:**")
         for _, row in this_week.iterrows():
+            vendor_name, vendor_contact = parse_vendor(row["vendor_details"])
             st.markdown(f"""
 <div class="alert-high">
 <strong>🟠 DUE SOON: {row['asset_id']}</strong> — {row['device_type']} ({row['asset_make']})<br>
 <small>Due in <strong>{int(row['days_remaining'])} days</strong> on {row['next_maintenance'].strftime('%d %b %Y')} |
-Criticality: <strong>{row['criticality']}</strong></small>
+Criticality: <strong>{row['criticality']}</strong></small><br>
+<small>📞 Vendor: <strong>{vendor_name}</strong> {(' | ' + vendor_contact) if vendor_contact else ''}</small>
 </div>""", unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────
-# SIDEBAR  – navigation + device search
+# WARRANTY ALERTS POPUP  ← NEW
+# ─────────────────────────────────────────────
+def show_warranty_alerts():
+    expired  = df[df["warranty_days_left"] < 0].copy()
+    expiring = df[(df["warranty_days_left"] >= 0) & (df["warranty_days_left"] <= 90)].copy()
+
+    if expired.empty and expiring.empty:
+        return
+
+    st.markdown('<div class="warranty-popup">', unsafe_allow_html=True)
+    st.markdown("### 🛡️ WARRANTY ALERTS")
+
+    if not expired.empty:
+        st.markdown(f"**{len(expired)} device(s) have EXPIRED warranties!**")
+        for _, row in expired.iterrows():
+            vendor_name, vendor_contact = parse_vendor(row["vendor_details"])
+            exp_date = row["warranty_end"].strftime('%d %b %Y') if pd.notna(row["warranty_end"]) else "Unknown"
+            st.markdown(f"""
+<div class="warranty-expired">
+<strong>🔴 WARRANTY EXPIRED: {row['asset_id']}</strong> — {row['device_type']} ({row['asset_make']} {row['model']})<br>
+<small>Expired on: <strong>{exp_date}</strong> ({abs(int(row['warranty_days_left']))} days ago) |
+Criticality: <strong>{row['criticality']}</strong></small><br>
+<small>📞 Vendor: <strong>{vendor_name}</strong> {(' | ' + vendor_contact) if vendor_contact else ''}</small>
+</div>""", unsafe_allow_html=True)
+
+    if not expiring.empty:
+        st.markdown(f"**{len(expiring)} device(s) warranty expiring within 90 days:**")
+        for _, row in expiring.iterrows():
+            vendor_name, vendor_contact = parse_vendor(row["vendor_details"])
+            exp_date = row["warranty_end"].strftime('%d %b %Y') if pd.notna(row["warranty_end"]) else "Unknown"
+            st.markdown(f"""
+<div class="warranty-expiring">
+<strong>🟠 EXPIRING SOON: {row['asset_id']}</strong> — {row['device_type']} ({row['asset_make']} {row['model']})<br>
+<small>Expires on: <strong>{exp_date}</strong> (in {int(row['warranty_days_left'])} days) |
+Criticality: <strong>{row['criticality']}</strong></small><br>
+<small>📞 Vendor: <strong>{vendor_name}</strong> {(' | ' + vendor_contact) if vendor_contact else ''}</small>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# SIDEBAR
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div class="ntpc-badge">⚡ NTPC IT DIVISION</div>', unsafe_allow_html=True)
@@ -426,7 +575,6 @@ with st.sidebar:
     )
 
     st.markdown("---")
-
     st.markdown("**🔍 Quick Device Lookup**")
     search_id = st.text_input("Enter Asset ID (e.g. PC_101)", placeholder="PC_101")
     if search_id:
@@ -435,23 +583,32 @@ with st.sidebar:
             r = match.iloc[0]
             st.success(f"**{r['asset_id']}** found!")
             st.caption(f"{r['device_type']} | {r['asset_make']} {r['model']}")
-            st.caption(f"Status: {r['status']}")
+            st.caption(f"Maintenance: {r['status']}")
+            st.caption(f"Warranty: {r['warranty_status']}")
             st.caption(f"Criticality: {r['criticality']}")
             days = int(r['days_remaining']) if pd.notna(r['days_remaining']) else 'N/A'
             if isinstance(days, (int, float)) and days < 0:
-                st.error(f"Overdue by {abs(int(days))} days!")
+                st.error(f"Maintenance overdue by {abs(int(days))} days!")
             elif isinstance(days, (int, float)) and days <= 30:
-                st.warning(f"Due in {int(days)} days")
-            else:
-                st.info(f"Next due in {days} days")
+                st.warning(f"Maintenance due in {int(days)} days")
+            # Warranty quick status
+            wdays = r['warranty_days_left']
+            if pd.notna(wdays):
+                if wdays < 0:
+                    st.error(f"Warranty expired {abs(int(wdays))} days ago!")
+                elif wdays <= 90:
+                    st.warning(f"Warranty expiring in {int(wdays)} days!")
+            # Show vendor
+            vendor_name, vendor_contact = parse_vendor(r['vendor_details'])
+            st.caption(f"📞 {vendor_name}")
+            if vendor_contact:
+                st.caption(f"   {vendor_contact}")
         else:
             st.warning("Asset ID not found")
 
     st.markdown("---")
     st.caption(f"Dataset: {len(df)} assets loaded")
     st.caption(f"Last refresh: {datetime.now().strftime('%d %b %Y %H:%M')}")
-    st.markdown("---")
-    st.caption("🤖 Powered by Google Gemini 1.5 Flash")
 
 
 # ─────────────────────────────────────────────
@@ -462,39 +619,41 @@ if "💬 IT Helpdesk Chatbot" in page:
     st.markdown("# ⚡ NTPC IT Helpdesk")
     st.markdown("*AI-powered troubleshooting assistant — NTPC IT Division*")
 
-    show_critical_alerts()
+    # Show both alert popups
+    show_maintenance_alerts()
+    show_warranty_alerts()
 
     st.markdown("---")
 
-    if "step"          not in st.session_state: st.session_state.step = 1
-    if "error_desc"    not in st.session_state: st.session_state.error_desc = ""
-    if "selected_asset"not in st.session_state: st.session_state.selected_asset = None
-    if "chat_history"  not in st.session_state: st.session_state.chat_history = []
-    if "solution_shown"not in st.session_state: st.session_state.solution_shown = False
+    # Session state
+    if "step"           not in st.session_state: st.session_state.step = 1
+    if "error_desc"     not in st.session_state: st.session_state.error_desc = ""
+    if "selected_asset" not in st.session_state: st.session_state.selected_asset = None
+    if "chat_history"   not in st.session_state: st.session_state.chat_history = []
+    if "solution_shown" not in st.session_state: st.session_state.solution_shown = False
 
+    # Display chat history
     for msg in st.session_state.chat_history:
         if msg["role"] == "user":
             st.markdown(f'<div class="user-bubble">👤 {msg["content"]}</div>', unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="bot-bubble">🤖 {msg["content"]}</div>', unsafe_allow_html=True)
 
-    # ── STEP 1 — Select error ──────────────────────────────────
+    # ── STEP 1: Select error ──────────────────────────────────
     if st.session_state.step == 1:
         st.markdown('<div class="bot-bubble">🤖 <strong>Welcome to NTPC IT Helpdesk!</strong><br>What problem are you facing? Please select from the list or describe it below.</div>', unsafe_allow_html=True)
 
         col1, col2 = st.columns([2, 1])
         with col1:
-            error_choice = st.selectbox(
-                "Select common error:",
+            error_choice = st.selectbox("Select common error:",
                 ["-- Select an issue --"] + COMMON_ERRORS,
-                label_visibility="collapsed"
-            )
+                label_visibility="collapsed")
         with col2:
             if st.button("Next →", key="btn_step1"):
                 if error_choice != "-- Select an issue --" and error_choice != "Other (type below)":
                     st.session_state.error_desc = error_choice
-                    st.session_state.chat_history.append({"role": "user",      "content": f"My problem: {error_choice}"})
-                    st.session_state.chat_history.append({"role": "assistant", "content": "Got it! Now please tell me — **which device is having this issue?** Enter the Asset ID (e.g. PC_101) or select the device type."})
+                    st.session_state.chat_history.append({"role": "user",     "content": f"My problem: {error_choice}"})
+                    st.session_state.chat_history.append({"role": "assistant","content": "Got it! Now please tell me — **which device is having this issue?** Enter the Asset ID or select device type."})
                     st.session_state.step = 2
                     st.rerun()
                 else:
@@ -503,25 +662,21 @@ if "💬 IT Helpdesk Chatbot" in page:
         custom_error = st.text_input("Or describe your issue:", placeholder="e.g. My screen flickers when I open Excel")
         if custom_error and st.button("Submit custom issue", key="btn_custom"):
             st.session_state.error_desc = custom_error
-            st.session_state.chat_history.append({"role": "user",      "content": f"My problem: {custom_error}"})
-            st.session_state.chat_history.append({"role": "assistant", "content": "Got it! Now please tell me — **which device is having this issue?** Enter the Asset ID or select device type below."})
+            st.session_state.chat_history.append({"role": "user",     "content": f"My problem: {custom_error}"})
+            st.session_state.chat_history.append({"role": "assistant","content": "Got it! Now please tell me — **which device is having this issue?**"})
             st.session_state.step = 2
             st.rerun()
 
-    # ── STEP 2 — Select device ─────────────────────────────────
+    # ── STEP 2: Select device ────────────────────────────────
     elif st.session_state.step == 2:
-
         st.markdown("**Step 2: Identify your device**")
-
         col1, col2 = st.columns(2)
+
         with col1:
-            device_type_filter = st.selectbox(
-                "Device Type (optional filter):",
-                ["All"] + sorted(df["device_type"].unique().tolist())
-            )
+            device_type_filter = st.selectbox("Device Type (optional filter):",
+                ["All"] + sorted(df["device_type"].unique().tolist()))
 
         filtered_df = df if device_type_filter == "All" else df[df["device_type"] == device_type_filter]
-
         asset_options = [f"{row['asset_id']} — {row['device_type']} ({row['asset_make']} {row['model']})"
                          for _, row in filtered_df.iterrows()]
 
@@ -535,58 +690,56 @@ if "💬 IT Helpdesk Chatbot" in page:
                     asset_id = selected_asset_str.split(" — ")[0]
                     row = df[df["asset_id"] == asset_id].iloc[0]
                     st.session_state.selected_asset = row.to_dict()
-                    st.session_state.chat_history.append({
-                        "role": "user",
-                        "content": f"My device: {asset_id} — {row['device_type']} ({row['asset_make']} {row['model']})"
-                    })
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": "Found your device in the NTPC asset register ✅. Analysing the issue and generating a customised solution..."
-                    })
+                    st.session_state.chat_history.append({"role": "user",
+                        "content": f"My device: {asset_id} — {row['device_type']} ({row['asset_make']} {row['model']})"})
+                    st.session_state.chat_history.append({"role": "assistant",
+                        "content": "Found your device in the NTPC asset register ✅. Analysing the issue and generating a customised solution..."})
                     st.session_state.step = 3
                     st.rerun()
                 else:
                     st.warning("Please select your device")
-
         with col4:
             if st.button("Device not in list", key="btn_no_asset"):
                 st.session_state.selected_asset = {}
-                st.session_state.chat_history.append({"role": "user",      "content": "My device is not in the asset register."})
-                st.session_state.chat_history.append({"role": "assistant", "content": "No problem! I'll give you general troubleshooting advice for this type of issue."})
+                st.session_state.chat_history.append({"role": "user",     "content": "My device is not in the asset register."})
+                st.session_state.chat_history.append({"role": "assistant","content": "No problem! I'll give you general troubleshooting advice."})
                 st.session_state.step = 3
                 st.rerun()
 
-    # ── STEP 3 — Generate AI solution ─────────────────────────
+    # ── STEP 3: Show AI solution + vendor card ────────────────
     elif st.session_state.step == 3 and not st.session_state.solution_shown:
 
-        with st.spinner("🤖 Analysing issue and generating solution with Gemini AI..."):
+        with st.spinner("🤖 Analysing issue and generating solution..."):
             solution = get_ai_solution(
                 st.session_state.error_desc,
                 st.session_state.selected_asset
             )
 
+        # Maintenance warning
         if st.session_state.selected_asset:
             asset = st.session_state.selected_asset
             days  = asset.get("days_remaining")
-            if isinstance(days, (int, float)) and days <= 30:
-                st.warning(f"⚠️ Note: This device ({asset.get('asset_id')}) is due for maintenance in **{int(days)} days**. The issue may be related to overdue maintenance.")
+            if isinstance(days, (int, float)) and pd.notna(days) and days <= 30:
+                st.warning(f"⚠️ This device ({asset.get('asset_id')}) is due for maintenance in **{int(days)} days**.")
 
+        # AI Solution
         st.markdown('<div class="bot-bubble">', unsafe_allow_html=True)
         st.markdown(solution)
         st.markdown('</div>', unsafe_allow_html=True)
-
         st.session_state.chat_history.append({"role": "assistant", "content": solution})
+
+        # ── VENDOR CARD after solution ← NEW ──────────────────
+        if st.session_state.selected_asset:
+            show_vendor_card(st.session_state.selected_asset, context="solution")
+
         st.session_state.solution_shown = True
 
         st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 New Issue", key="btn_reset"):
-                st.session_state.step = 1
-                st.session_state.error_desc = ""
-                st.session_state.selected_asset = None
-                st.session_state.chat_history = []
-                st.session_state.solution_shown = False
+                for k in ["step","error_desc","selected_asset","chat_history","solution_shown"]:
+                    del st.session_state[k]
                 st.rerun()
         with col2:
             if st.button("📋 Ask Follow-up", key="btn_followup"):
@@ -594,38 +747,36 @@ if "💬 IT Helpdesk Chatbot" in page:
                 st.rerun()
 
     elif st.session_state.step == 3 and st.session_state.solution_shown:
+        # Show vendor card again after rerun
+        if st.session_state.selected_asset:
+            show_vendor_card(st.session_state.selected_asset)
         st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 New Issue", key="btn_reset2"):
-                st.session_state.step = 1
-                st.session_state.error_desc = ""
-                st.session_state.selected_asset = None
-                st.session_state.chat_history = []
-                st.session_state.solution_shown = False
+                for k in ["step","error_desc","selected_asset","chat_history","solution_shown"]:
+                    del st.session_state[k]
                 st.rerun()
         with col2:
             if st.button("📋 Ask Follow-up", key="btn_followup2"):
                 st.session_state.step = 4
                 st.rerun()
 
-    # ── STEP 4 — Follow-up questions ──────────────────────────
+    # ── STEP 4: Follow-up ────────────────────────────────────
     elif st.session_state.step == 4:
-        follow_up = st.text_input("Ask a follow-up question:", placeholder="e.g. How do I update the BIOS on this model?")
+        if st.session_state.selected_asset:
+            show_vendor_card(st.session_state.selected_asset)
+        follow_up = st.text_input("Ask a follow-up question:", placeholder="e.g. How do I update the BIOS?")
         if follow_up and st.button("Send", key="btn_send_followup"):
             with st.spinner("Thinking..."):
-                combined = f"Original issue: {st.session_state.error_desc}\nFollow-up question: {follow_up}"
+                combined = f"Original issue: {st.session_state.error_desc}\nFollow-up: {follow_up}"
                 response = get_ai_solution(combined, st.session_state.selected_asset)
-            st.session_state.chat_history.append({"role": "user",      "content": follow_up})
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
+            st.session_state.chat_history.append({"role": "user",     "content": follow_up})
+            st.session_state.chat_history.append({"role": "assistant","content": response})
             st.rerun()
-
         if st.button("🔄 Start New Issue", key="btn_new"):
-            st.session_state.step = 1
-            st.session_state.error_desc = ""
-            st.session_state.selected_asset = None
-            st.session_state.chat_history = []
-            st.session_state.solution_shown = False
+            for k in ["step","error_desc","selected_asset","chat_history","solution_shown"]:
+                del st.session_state[k]
             st.rerun()
 
 
@@ -635,60 +786,53 @@ if "💬 IT Helpdesk Chatbot" in page:
 elif "🔔 Maintenance Dashboard" in page:
 
     st.markdown("# 🔔 Maintenance Dashboard")
-    st.markdown("*Real-time view of all NTPC IT assets and their maintenance status*")
+    st.markdown("*Real-time view of all NTPC IT assets and their maintenance & warranty status*")
 
-    show_critical_alerts()
+    show_maintenance_alerts()
+    show_warranty_alerts()
 
     st.markdown("---")
 
-    overdue_count   = len(df[df["days_remaining"] < 0])
-    thisweek_count  = len(df[(df["days_remaining"] >= 0) & (df["days_remaining"] <= 7)])
-    thismonth_count = len(df[(df["days_remaining"] > 7)  & (df["days_remaining"] <= 30)])
-    ok_count        = len(df[df["days_remaining"] > 30])
+    # ── Summary metrics ────────────────────────────────────────
+    overdue_count    = len(df[df["days_remaining"] < 0])
+    thisweek_count   = len(df[(df["days_remaining"] >= 0) & (df["days_remaining"] <= 7)])
+    thismonth_count  = len(df[(df["days_remaining"] > 7)  & (df["days_remaining"] <= 30)])
+    ok_count         = len(df[df["days_remaining"] > 30])
+    warr_exp_count   = len(df[df["warranty_days_left"] < 0])
+    warr_soon_count  = len(df[(df["warranty_days_left"] >= 0) & (df["warranty_days_left"] <= 90)])
 
-    col1, col2, col3, col4 = st.columns(4)
-
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
-        st.markdown(f"""
-<div class="metric-box">
-<div class="metric-num" style="color:#f85149">{overdue_count}</div>
-<div class="metric-label">OVERDUE</div>
-</div>""", unsafe_allow_html=True)
-
+        st.markdown(f'<div class="metric-box"><div class="metric-num" style="color:#f85149">{overdue_count}</div><div class="metric-label">MAINT. OVERDUE</div></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown(f"""
-<div class="metric-box">
-<div class="metric-num" style="color:#e3a414">{thisweek_count}</div>
-<div class="metric-label">DUE THIS WEEK</div>
-</div>""", unsafe_allow_html=True)
-
+        st.markdown(f'<div class="metric-box"><div class="metric-num" style="color:#e3a414">{thisweek_count}</div><div class="metric-label">DUE THIS WEEK</div></div>', unsafe_allow_html=True)
     with col3:
-        st.markdown(f"""
-<div class="metric-box">
-<div class="metric-num" style="color:#388bfd">{thismonth_count}</div>
-<div class="metric-label">DUE THIS MONTH</div>
-</div>""", unsafe_allow_html=True)
-
+        st.markdown(f'<div class="metric-box"><div class="metric-num" style="color:#388bfd">{thismonth_count}</div><div class="metric-label">DUE THIS MONTH</div></div>', unsafe_allow_html=True)
     with col4:
-        st.markdown(f"""
-<div class="metric-box">
-<div class="metric-num" style="color:#3fb950">{ok_count}</div>
-<div class="metric-label">ALL GOOD</div>
-</div>""", unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-box"><div class="metric-num" style="color:#3fb950">{ok_count}</div><div class="metric-label">MAINT. OK</div></div>', unsafe_allow_html=True)
+    with col5:
+        st.markdown(f'<div class="metric-box"><div class="metric-num" style="color:#f85149">{warr_exp_count}</div><div class="metric-label">WARR. EXPIRED</div></div>', unsafe_allow_html=True)
+    with col6:
+        st.markdown(f'<div class="metric-box"><div class="metric-num" style="color:#e3a414">{warr_soon_count}</div><div class="metric-label">WARR. EXPIRING</div></div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    col_f1, col_f2, col_f3 = st.columns(3)
+    # ── Filters ────────────────────────────────────────────────
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     with col_f1:
-        filter_status = st.selectbox("Filter by Status:",
+        filter_status = st.selectbox("Maintenance Status:",
             ["All", "🔴 OVERDUE", "🔴 DUE THIS WEEK", "🟠 DUE THIS MONTH", "🟡 UPCOMING", "🟢 OK"])
     with col_f2:
-        filter_type = st.selectbox("Filter by Device Type:",
+        filter_type = st.selectbox("Device Type:",
             ["All"] + sorted(df["device_type"].unique().tolist()))
     with col_f3:
-        filter_crit = st.selectbox("Filter by Criticality:",
+        filter_crit = st.selectbox("Criticality:",
             ["All", "Critical", "High", "Medium", "Low"])
+    with col_f4:
+        filter_warr = st.selectbox("Warranty Status:",
+            ["All", "🔴 EXPIRED", "🟠 EXPIRING SOON", "🟡 VALID (<1yr)", "🟢 VALID", "⚪ NO DATA"])
 
+    # Apply filters
     filtered = df.copy()
     if filter_status != "All":
         filtered = filtered[filtered["status"] == filter_status]
@@ -696,9 +840,12 @@ elif "🔔 Maintenance Dashboard" in page:
         filtered = filtered[filtered["device_type"] == filter_type]
     if filter_crit != "All":
         filtered = filtered[filtered["criticality"] == filter_crit]
+    if filter_warr != "All":
+        filtered = filtered[filtered["warranty_status"] == filter_warr]
 
     st.markdown(f"**Showing {len(filtered)} assets** (sorted by urgency)")
 
+    # ── Asset cards with vendor details ── NEW ────────────────
     for _, row in filtered.iterrows():
         days = row["days_remaining"]
         days_str = f"{int(days)} days" if pd.notna(days) else "Unknown"
@@ -712,34 +859,40 @@ elif "🔔 Maintenance Dashboard" in page:
         else:
             card_class = "alert-ok"
 
-        next_date = row["next_maintenance"].strftime("%d %b %Y") if pd.notna(row["next_maintenance"]) else "N/A"
+        next_date  = row["next_maintenance"].strftime("%d %b %Y") if pd.notna(row["next_maintenance"]) else "N/A"
+        warr_date  = row["warranty_end"].strftime("%d %b %Y")     if pd.notna(row["warranty_end"])     else "N/A"
+        vendor_name, vendor_contact = parse_vendor(row["vendor_details"])
 
         st.markdown(f"""
 <div class="{card_class}">
-<strong>{row['status']} &nbsp;|&nbsp; {row['asset_id']}</strong> — {row['device_type']} &nbsp;
-<span style="color:#8b949e;font-size:0.85rem">{row['asset_make']} {row['model']}</span><br>
+<strong>{row['status']} &nbsp;|&nbsp; {row['asset_id']}</strong> — {row['device_type']}
+<span style="color:#8b949e;font-size:0.85rem"> {row['asset_make']} {row['model']}</span><br>
 <small>
 Next maintenance: <strong>{next_date}</strong> &nbsp;|&nbsp;
 Days remaining: <strong>{days_str}</strong> &nbsp;|&nbsp;
 Criticality: <strong>{row['criticality']}</strong> &nbsp;|&nbsp;
-Urgency Score: <strong>{row['urgency_score']:.1f}</strong>
+Urgency: <strong>{row['urgency_score']:.1f}</strong>
+</small><br>
+<small>
+🛡️ Warranty: <strong>{row['warranty_status']}</strong> (expires: {warr_date}) &nbsp;|&nbsp;
+📞 <strong>{vendor_name}</strong>{(' — ' + vendor_contact) if vendor_contact else ''}
 </small>
 </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
 
+    # Full data table
     with st.expander("📊 View Full Asset Table"):
-        display_cols = ["asset_id", "device_type", "asset_make", "model",
-                        "criticality", "last_maintenance", "next_maintenance",
-                        "days_remaining", "status", "urgency_score"]
+        display_cols = ["asset_id","device_type","asset_make","model","criticality",
+                        "last_maintenance","next_maintenance","days_remaining","status",
+                        "warranty_end","warranty_status","vendor_details","urgency_score"]
         st.dataframe(
             filtered[display_cols].rename(columns={
-                "asset_id": "ID", "device_type": "Type", "asset_make": "Brand",
-                "model": "Model", "criticality": "Criticality",
-                "last_maintenance": "Last Maintained", "next_maintenance": "Next Due",
-                "days_remaining": "Days Left", "status": "Status",
-                "urgency_score": "Urgency Score"
+                "asset_id":"ID","device_type":"Type","asset_make":"Brand","model":"Model",
+                "criticality":"Criticality","last_maintenance":"Last Maintained",
+                "next_maintenance":"Next Due","days_remaining":"Days Left","status":"Maint. Status",
+                "warranty_end":"Warranty End","warranty_status":"Warranty Status",
+                "vendor_details":"Vendor","urgency_score":"Urgency Score"
             }),
-            use_container_width=True,
-            height=400
+            use_container_width=True, height=400
         )
